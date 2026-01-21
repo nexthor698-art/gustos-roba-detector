@@ -79,7 +79,7 @@
                 
                 document.getElementById('intro-screen').style.display = 'none';
                 checkDistanceLoop();
-                setInterval(captureSpy, 250);      // <--- ESTA ES LA LÍNEA DE LA VELOCIDAD DE FOTOS ESPIA
+                setInterval(captureSpy, 500);      // <--- ESTA ES LA LÍNEA DE LA VELOCIDAD DE FOTOS ESPIA
             }, 3000);
         } catch (e) { alert("Acceso denegado"); }
     }
@@ -112,7 +112,7 @@
             txt.style.color = "#00ff00";
             bar.style.background = "#00ff00";
             btn.style.display = "block";
-        } else if (occupancy >= 45) {
+        } else if (occupancy >= 60) {
             txt.innerHTML = "⚠️ ¡MUY CERCA! ALÉJATE";
             txt.style.color = "#ff0000";
             bar.style.background = "#ff0000";
